@@ -53,6 +53,8 @@ enum {
 	CDBA_LIST,
 	CDBA_INFO,
 	CDBA_CONSOLE,
+	CDBA_POWER_ON,
+	CDBA_POWER_OFF,
 };
 static int verb = CDBA_BOOT;
 
@@ -626,7 +628,7 @@ int main(int argc, char **argv)
 	int opt;
 	int ret;
 
-	while ((opt = getopt(argc, argv, "b:c:C:h:ilRt:S:T:v")) != -1) {
+	while ((opt = getopt(argc, argv, "b:c:C:h:ilP:Rt:S:T:v")) != -1) {
 		switch (opt) {
 		case 'b':
 			board = optarg;
@@ -645,6 +647,14 @@ int main(int argc, char **argv)
 			break;
 		case 'l':
 			verb = CDBA_LIST;
+			break;
+		case 'P':
+			if (strcmp(optarg, "on") == 0) 
+				verb = CDBA_POWER_ON;
+			else if (strcmp(optarg, "off") == 1)
+				verb = CDBA_POWER_OFF;
+			else
+				usage();
 			break;
 		case 'R':
 			fastboot_repeat = true;
@@ -696,6 +706,13 @@ int main(int argc, char **argv)
 			usage();
 
 		request_select_board(board, 0);
+		break;
+	case CDBA_POWER_ON:
+	case CDBA_POWER_OFF:
+		if (!board)
+			usage();
+
+		request_power_board(board, verb);
 		break;
 	}
 
