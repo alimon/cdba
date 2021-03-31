@@ -115,7 +115,7 @@ static struct fastboot_ops fastboot_ops = {
 	.info = fastboot_info,
 };
 
-static void msg_select_board(const void *param)
+static void msg_select_board(void *param)
 {
 	struct msg reply = { MSG_SELECT_BOARD, 0 };
 

@@ -48,6 +48,14 @@
 #include "circ_buf.h"
 #include "list.h"
 
+enum {
+	CDBA_BOOT,
+	CDBA_LIST,
+	CDBA_INFO,
+	CDBA_CONSOLE,
+};
+static int verb = CDBA_BOOT;
+
 static bool quit;
 static bool fastboot_repeat;
 static bool fastboot_done;
@@ -287,20 +295,22 @@ static void request_board_info(const char *board)
 struct select_board {
 	struct work work;
 
+	uint8_t device_lock;
 	const char *board;
 };
 
 static void select_board_fn(struct work *work, int ssh_stdin)
 {
 	struct select_board *board = container_of(work, struct select_board, work);
-	size_t blen = strlen(board->board) + 1;
+	size_t blen = sizeof(board->device_lock) + strlen(board->board) + 1;
 	struct msg *msg;
 	ssize_t n;
 
 	msg = alloca(sizeof(*msg) + blen);
 	msg->type = MSG_SELECT_BOARD;
 	msg->len = blen;
-	memcpy(msg->data, board->board, blen);
+	memcpy(msg->data, &(board->device_lock), sizeof(board->device_lock));
+	memcpy(msg->data + sizeof(board->device_lock), board->board, blen);
 
 	n = write(ssh_stdin, msg, sizeof(*msg) + blen);
 	if (n < 0)
@@ -309,12 +319,13 @@ static void select_board_fn(struct work *work, int ssh_stdin)
 	free(work);
 }
 
-static void request_select_board(const char *board)
+static void request_select_board(const char *board, uint8_t device_lock)
 {
 	struct select_board *work;
 
 	work = malloc(sizeof(*work));
 	work->work.fn = select_board_fn;
+	work->device_lock = device_lock;
 	work->board = board;
 
 	list_add(&work_items, &work->work.node);
@@ -518,6 +529,9 @@ static int handle_message(struct circ_buf *buf)
 			}
 			break;
 		case MSG_FASTBOOT_PRESENT:
+			if (verb == CDBA_CONSOLE)
+				break;
+
 			if (*(uint8_t*)msg->data) {
 				// printf("======================================== MSG_FASTBOOT_PRESENT(on)\n");
 				if (!fastboot_done || fastboot_repeat)
@@ -579,14 +593,11 @@ static void usage(void)
 			__progname);
 	fprintf(stderr, "usage: %s -l -h <host>\n",
 			__progname);
+	fprintf(stderr, "usage: %s -b <board> -h <host> [-t <timeout>] "
+			"[-T <inactivity-timeout>] -v\n",
+			__progname);
 	exit(1);
 }
-
-enum {
-	CDBA_BOOT,
-	CDBA_LIST,
-	CDBA_INFO,
-};
 
 int main(int argc, char **argv)
 {
@@ -612,11 +623,10 @@ int main(int argc, char **argv)
 	fd_set wfds;
 	ssize_t n;
 	int nfds;
-	int verb = CDBA_BOOT;
 	int opt;
 	int ret;
 
-	while ((opt = getopt(argc, argv, "b:c:C:h:ilRt:S:T:")) != -1) {
+	while ((opt = getopt(argc, argv, "b:c:C:h:ilRt:S:T:v")) != -1) {
 		switch (opt) {
 		case 'b':
 			board = optarg;
@@ -648,6 +658,9 @@ int main(int argc, char **argv)
 		case 'T':
 			timeout_inactivity = atoi(optarg);
 			break;
+		case 'v':
+			verb = CDBA_CONSOLE;
+			break;
 		default:
 			usage();
 		}
@@ -667,7 +680,7 @@ int main(int argc, char **argv)
 		if (!S_ISREG(sb.st_mode) && !S_ISLNK(sb.st_mode))
 			errx(1, "\"%s\" is not a regular file", fastboot_file);
 
-		request_select_board(board);
+		request_select_board(board, 1);
 		break;
 	case CDBA_LIST:
 		request_board_list();
@@ -677,6 +690,12 @@ int main(int argc, char **argv)
 			usage();
 
 		request_board_info(board);
+		break;
+	case CDBA_CONSOLE:
+		if (!board)
+			usage();
+
+		request_select_board(board, 0);
 		break;
 	}
 
