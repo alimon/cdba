@@ -38,8 +38,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "cdba-server.h"
+#include "cdba-server-standalone.h"
 #include "device.h"
 #include "fastboot.h"
 #include "console.h"
@@ -79,6 +81,43 @@ static void device_lock(struct device *device)
 		err(1, "failed to lock lockfile %s", lock);
 }
 
+static int device_mkfifo(struct device *device)
+{
+	char fifo[PATH_MAX];
+	int fd;
+	int n;
+
+	n = snprintf(fifo, sizeof(fifo), "/tmp/cdba-%s.channel", device->board);
+	if (n >= sizeof(fifo))
+		errx(1, "failed to build channel path");
+
+	/**
+	 * When device is locked means that cdba-standalone client was inkoved to 
+	 * get console so the cdba-server expects commands (power on/off) from 
+	 * another client.
+	 */
+	if (device->locked) {
+		umask(0000); /* Allow to other users remove the fifo */
+
+		if (unlink(fifo) < 0) {
+			if (errno != ENOENT)
+				err(1, "failed to remove channel %s", fifo);
+		}
+
+		if (mkfifo(fifo, 0666) < 0) 
+			err(1, "failed to open channel %s", fifo);
+
+		fd = open(fifo, O_RDONLY | O_NONBLOCK);
+		watch_add_readfd(fd, handle_standalone_channel, device);
+	} else {
+		fd = open(fifo, O_WRONLY | O_NONBLOCK);
+	}
+	if (fd < 0)
+		err(1, "failed to open channel %s", fifo);
+
+	return fd;
+}
+
 struct device *device_open(const void *msg,
 			   struct fastboot_ops *fastboot_ops)
 {
@@ -106,6 +145,10 @@ found:
 		if (!device->cdb)
 			errx(1, "failed to open device controller");
 	}
+
+	device->standalone_fifo = device_mkfifo(device);
+	if (device->standalone_fifo == -1)
+		errx(1, "failed to open standalone channel");
 
 	if (device->console_dev)
 		console_open(device);
@@ -320,6 +363,8 @@ void device_close(struct device *dev)
 	if (!dev->usb_always_on)
 		device_usb(dev, false);
 	device_power(dev, false);
+
+	close(dev->standalone_fifo);
 
 	if (dev->close)
 		dev->close(dev);
