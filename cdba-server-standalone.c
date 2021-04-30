@@ -29,11 +29,51 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "cdba-server-standalone.h"
+#include <err.h>
+#include <errno.h>
+#include <unistd.h>
 
-extern struct device *selected_device;
+#include "cdba-client.h"
+#include "device.h"
+#include "cdba-server-standalone.h"
 
 int handle_standalone_channel(int fd, void *data)
 {
+	struct device *selected_device = data;
+	struct msg msg;
+	int n;
+
+	n = read(fd, &msg, sizeof(msg));
+	if (n < 0 && errno == EAGAIN)
+		return 0;
+	else
+		return n;
+
+	switch (msg.type) {
+	case MSG_POWER_ON:
+		warn("power on");
+		device_power(selected_device, true);
+		break;
+	case MSG_POWER_OFF:
+		warn("power off");
+		device_power(selected_device, false);
+		break;
+	}
+
 	return 0;
+}
+
+void cdba_server_standalone_device_power(struct device *device, bool on)
+{
+	struct msg msg;
+	int n;
+
+	if (on)
+		msg.type = MSG_POWER_ON;
+	else
+		msg.type = MSG_POWER_OFF;
+
+	n = write(device->standalone_fifo, &msg, sizeof(msg));
+	if (n < 0)
+		err(1, "failed to write on cdba-server-standalone channel");
 }

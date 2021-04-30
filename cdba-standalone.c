@@ -53,7 +53,7 @@ void cdba_usage(const char *__progname)
 			"[-T <inactivity-timeout>] <-a console>\n",
 			__progname);
 	fprintf(stderr, "usage: %s -b <board> -h <host> [-t <timeout>] "
-			"[-T <inactivity-timeout>] <-p <on/off/reset>>\n",
+			"[-T <inactivity-timeout>] <-p <on|off>>\n",
 			__progname);
 }
 
@@ -72,8 +72,6 @@ int cdba_handle_opt(int opt, const char *optarg)
 			verb = CDBA_POWER_ON;
 		else if (strcmp(optarg, "off") == 0)
 			verb = CDBA_POWER_OFF;
-		else if (strcmp(optarg, "reset") == 0)
-			verb = CDBA_POWER_RESET;
 		else
 			cdba_client_usage();
 
@@ -94,7 +92,6 @@ void cdba_handle_verb(int argc, char **argv, int optind, const char *board)
 		break;
 	case CDBA_POWER_ON:
 	case CDBA_POWER_OFF:
-	case CDBA_POWER_RESET:
 		cdba_client_request_select_board(board, 0);
 		break;
 	}
@@ -116,16 +113,9 @@ int cdba_handle_message(struct msg *msg)
 		case CDBA_POWER_OFF:
 			cdba_client_request_power_off();
 			break;
-		case CDBA_POWER_RESET:
-			cdba_client_request_power_off();
-			sleep(5);
-			cdba_client_request_power_on();
-			break;
 		}
 	case MSG_POWER_ON:
 		if (verb == CDBA_POWER_ON)
-			cdba_client_quit = true;
-		else if (verb == CDBA_POWER_RESET)
 			cdba_client_quit = true;
 		break;
 	case MSG_POWER_OFF:

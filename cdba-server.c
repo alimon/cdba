@@ -40,6 +40,7 @@
 #include <unistd.h>
 
 #include "cdba-server.h"
+#include "cdba-server-standalone.h"
 #include "circ_buf.h"
 #include "device.h"
 #include "device_parser.h"
@@ -201,12 +202,18 @@ static int handle_stdin(int fd, void *buf)
 			// fprintf(stderr, "hard reset\n");
 			break;
 		case MSG_POWER_ON:
-			device_power(selected_device, true);
+			if (selected_device->locked)
+				device_power(selected_device, true);
+			else
+				cdba_server_standalone_device_power(selected_device, true);
 
 			invoke_reply(MSG_POWER_ON);
 			break;
 		case MSG_POWER_OFF:
-			device_power(selected_device, false);
+			if (selected_device->locked)
+				device_power(selected_device, false);
+			else
+				cdba_server_standalone_device_power(selected_device, false);
 
 			invoke_reply(MSG_POWER_OFF);
 			break;
